@@ -1,27 +1,19 @@
 import { ComposedChart, Line, Scatter, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts';
-import { ApproximationResult } from "../utils";
+import { SolutionData } from "../utils";
+import { memo } from 'react';
 
-interface Point {
-  x: number;
-  y: number;
-}
 interface MultiGraphProps {
-  approximations: ApproximationResult[];
-  inputPoints: Point[];
+  solution: SolutionData
   segments?: number;
 }
 
 const COLORS = ['#8884d8', '#82ca9d', '#ff7300', '#ffc658', '#a4de6c', '#d0ed57'];
 
-export const MultiGraph = ({
-                                                        approximations,
-                                                        inputPoints,
-                                                        segments = 100
-                                                      }: MultiGraphProps) => {
-  if (!approximations.length || !inputPoints.length) return null;
+export const MultiGraph = memo(function MultiGraph({ solution, segments = 300 }: MultiGraphProps) {
+  if (!solution.interpolations.length || !solution.points.length) return null;
 
   // Определяем интервал по введенным точкам
-  const xValues = inputPoints.map(p => p.x);
+  const xValues = solution.points.map(([x]) => x);
   const minX = Math.min(...xValues);
   const maxX = Math.max(...xValues);
   const intervalSize = maxX - minX;
@@ -32,20 +24,20 @@ export const MultiGraph = ({
   const b = maxX + padding;
 
   // Генерируем данные для всех функций
-  const allData = approximations.map((approx, index) => {
+  const allData = solution.interpolations.map((interpolation, index) => {
     const color = COLORS[index % COLORS.length];
     const functionData = Array.from({ length: segments }).map((_, i) => {
       const x = a + (i / (segments - 1)) * (b - a);
       return {
         x,
-        [`y_${index}`]: approx.fn(x),
-        name: approx.name,
+        [`y_${index}`]: interpolation.fn(x),
+        name: interpolation.name,
         color
       };
     });
 
     return {
-      name: approx.name,
+      name: interpolation.name,
       data: functionData,
       color
     };
@@ -59,14 +51,15 @@ export const MultiGraph = ({
       result[`name_${idx}`] = approx.name;
     });
     return result;
-  });
+  }).concat(solution.points.map(([x, y]) => {
+    const point: any = { x, y }
+    solution.interpolations.forEach((interpolation, idx) => {
+      point[`y_${idx}`] = interpolation.fn(x);
+      point[`name_${idx}`] = interpolation.name;
+    });
 
-  // Добавляем исходные точки
-  const inputPointsData = inputPoints.map(point => ({
-    x: point.x,
-    ...point,
-    isInput: true
-  }));
+    return point
+  })).sort((a, b) => a.x - b.x);
 
   return (
     <ComposedChart
@@ -92,15 +85,12 @@ export const MultiGraph = ({
           dot={false}
         />
       ))}
-
-      {/* Исходные точки */}
       <Scatter
         name="Исходные точки"
-        data={inputPointsData}
         dataKey="y"
         fill="#ff0000"
         shape="circle"
       />
     </ComposedChart>
   );
-};
+});

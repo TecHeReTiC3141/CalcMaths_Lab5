@@ -1,4 +1,4 @@
-import { EquationOption, IntegralSolvingMethod, SolvingMethodOption } from "./types.ts";
+import { EquationOption } from "./types.ts";
 
 export const predefinedFunctions: EquationOption[] = [
     {
@@ -16,40 +16,7 @@ export const predefinedFunctions: EquationOption[] = [
     {
         equation: (x: number) => Math.sin(x) - x / 2,
         label: 'sin(x) - x / 2'
-    },
-    {
-        equation: (x: number) => Math.exp(x) - 2,
-        label: 'e^x - 2'
-    },
-    {
-        equation: (x: number) => Math.log(x) + x,
-        label: 'ln(x) + x'
-    },
-    {
-        equation: (x: number) => 1 / x,
-        label: '1 / x'
     }
-]
-
-export const predefinedMethods: SolvingMethodOption[] = [
-    {
-        label: 'Left rectangles',
-        value: IntegralSolvingMethod.RectangleLeft
-    },
-    {
-        label: 'Right rectangles',
-        value: IntegralSolvingMethod.RectangleRight
-    },
-    {
-        label: 'Center rectangle',
-        value: IntegralSolvingMethod.RectangleCenter
-    },    {
-        label: 'Trapezoid',
-        value: IntegralSolvingMethod.Trapezoid
-    },    {
-        label: 'Simpson (parabolas)',
-        value: IntegralSolvingMethod.Simpson
-    },
 ]
 
 export const INITIAL_SEGMENTS = 4

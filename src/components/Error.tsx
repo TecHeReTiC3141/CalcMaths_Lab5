@@ -6,6 +6,7 @@ type ErrorProps = {
 
 const errorTexts: Record<ValidationError, string> = {
   [ValidationError.noConvenge]: "Integral does not exist as it does not converge",
+  [ValidationError.invalidPoints]: "Points are not valid. Check that entered data safisfy data format",
 }
 
 

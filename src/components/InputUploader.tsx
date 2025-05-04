@@ -1,10 +1,11 @@
 import { ChangeEvent, Dispatch, SetStateAction, useState } from "react";
 
 type Props = {
+    setInterpolationPoint: Dispatch<SetStateAction<number>>
     setPoints: Dispatch<SetStateAction<string>>
 }
 
-export function InputUploader({ setPoints }: Props) {
+export function InputUploader({ setPoints, setInterpolationPoint }: Props) {
     const [ error, setError ] = useState<string | null>(null);
 
     const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
@@ -15,16 +16,17 @@ export function InputUploader({ setPoints }: Props) {
         setError(null)
         reader.onload = (e) => {
             const content = e.target?.result as string;
-            const lines = content.trim().split("\n")
-            if (lines.length < 8 || lines.length > 12) {
-                setError("There must be from 8 to 12 points")
-                return
-            }
-            if (lines.some((line) => {
+            const [interpolationPoint, ...lines] = content.split("\n").map(line => line.trim()).filter((line) => line)
+
+            if (isNaN(+interpolationPoint) || lines.some((line) => {
                 const [x, y] = line.split(' ').map((val) => +val)
                 return isNaN(x) || isNaN(y)
-            }))
-            setPoints(content)
+            })) { 
+                setError("Incorrect format")
+                return
+            }
+            setInterpolationPoint(+interpolationPoint)
+            setPoints(lines.join('\n'))
         };
         reader.readAsText(file);
     };
@@ -39,11 +41,12 @@ export function InputUploader({ setPoints }: Props) {
                 className="mt-2 border p-1"
             />
             <p className="font-bold">Input Format</p>
+            <pre>x</pre>
             <pre>x1 y1</pre>
             <pre>x2 y2</pre>
             <pre>...</pre>
             <pre>xn yn</pre>
-            { error && <p className="text-lg text-red-500 font-bold">Incorrect format: {error}</p>}
+            { error && <p className="text-lg text-red-500 font-bold">{error}</p>}
         </div>
     )
 }

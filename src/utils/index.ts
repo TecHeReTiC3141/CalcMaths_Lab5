@@ -1,15 +1,3 @@
-import {
-  computeCoefficientOfDetermination,
-  computeMeanSquaredError,
-  computeMeasureOfDeviation,
-  computePearsonCorrelation,
-  cubicApproximation,
-  exponentialApproximation,
-  linearApproximation, logarithmicApproximation, powerApproximation,
-  quadraticApproximation
-} from "./approxFunctions.ts";
-import { SEGMENTS } from "../constants.ts";
-
 export type Point = [number, number];
 export type ApproximationResult = {
   name: string;
@@ -22,167 +10,303 @@ export type ApproximationResult = {
 };
 
 export const getPoints = (value: string): Point[] | null => {
-  const lines = value.split('\n')
-  const points = lines.map((line) => line.split(' ').map((val) => +val))
+  const lines = value.split('\n').map(line => line.trim()).filter((line) => line);
+  const points = lines.map((line) => line.split(' ').map((val) => +val.replace(',', '.')) as Point)
   if (points.some(([x, y]) => isNaN(x) || isNaN(y))) {
     return null
   }
   return points
 }
 
-export function getApproximations(points: Point[]): ApproximationResult[] {
-  const n = points.length;
-  const xs = points.map(p => p[0]);
-  const ys = points.map(p => p[1]);
+type Polynomial = (x: number) => number;
 
-  // Проверка на корректность данных
-  if (n < 8 || n > 12) {
-    throw new Error("Количество точек должно быть от 8 до 12");
-  }
+function factorial(n: number): number {
+    return n <= 1 ? 1 : n * factorial(n - 1);
+}
 
-  // Проверка на наличие отрицательных значений для определенных аппроксимаций
-  const hasNegativeX = xs.some(x => x <= 0);
-  const hasNegativeY = ys.some(y => y <= 0);
+function reduce<T>(arr: T[], fn: (a: T, b: T) => T, initial?: T): T {
+    return arr.reduce(fn, initial as T);
+}
 
-  const results: ApproximationResult[] = [];
+function lagrangePolynomial(xs: number[], ys: number[], n: number): Polynomial {
+    return (x: number) => {
+        return ys.slice(0, n).reduce((sum, y, i) => {
+            const term = reduce<number>(
+                xs.slice(0, n)
+                    .filter((_, j) => i !== j)
+                    .map(xj => (x - xj) / (xs[i] - xj)),
+                (a, b) => a * b,
+                1
+            );
+            return sum + y * term;
+        }, 0);
+    };
+}
 
-  // 1. Линейная аппроксимация
-  const [linearFn, aLinear, bLinear] = linearApproximation(xs, ys, n);
-  const linearResult: ApproximationResult = {
-    name: "Линейная",
-    fn: linearFn,
-    coefficients: [aLinear, bLinear],
-    standardDeviation: computeMeanSquaredError(xs, ys, linearFn, n),
-    measureOfDeviation: computeMeasureOfDeviation(xs, ys, linearFn, n),
-    determinationCoefficient: computeCoefficientOfDetermination(xs, ys, linearFn, n),
-    pearsonCorrelation: computePearsonCorrelation(xs, ys, n)
-  };
-  results.push(linearResult);
-
-  // 2. Квадратичная аппроксимация
-  const [quadraticFn, aQuad, bQuad, cQuad] = quadraticApproximation(xs, ys, n);
-  results.push({
-    name: "Квадратичная",
-    fn: quadraticFn,
-    coefficients: [aQuad, bQuad, cQuad],
-    standardDeviation: computeMeanSquaredError(xs, ys, quadraticFn, n),
-    measureOfDeviation: computeMeasureOfDeviation(xs, ys, quadraticFn, n),
-    determinationCoefficient: computeCoefficientOfDetermination(xs, ys, quadraticFn, n)
-  });
-
-  // 3. Кубическая аппроксимация
-  const [cubicFn, aCubic, bCubic, cCubic, dCubic] = cubicApproximation(xs, ys, n);
-  results.push({
-    name: "Кубическая",
-    fn: cubicFn,
-    coefficients: [aCubic, bCubic, cCubic, dCubic],
-    standardDeviation: computeMeanSquaredError(xs, ys, cubicFn, n),
-    measureOfDeviation: computeMeasureOfDeviation(xs, ys, cubicFn, n),
-    determinationCoefficient: computeCoefficientOfDetermination(xs, ys, cubicFn, n)
-  });
-
-  // 4. Экспоненциальная аппроксимация (только если все y > 0)
-  if (!hasNegativeY) {
-    try {
-      const [expFn, aExp, bExp] = exponentialApproximation(xs, ys, n);
-      results.push({
-        name: "Экспоненциальная",
-        fn: expFn,
-        coefficients: [aExp, bExp],
-        standardDeviation: computeMeanSquaredError(xs, ys, expFn, n),
-        measureOfDeviation: computeMeasureOfDeviation(xs, ys, expFn, n),
-        determinationCoefficient: computeCoefficientOfDetermination(xs, ys, expFn, n)
-      });
-    } catch (e) {
-      console.warn("Не удалось вычислить экспоненциальную аппроксимацию:", e.message);
+function dividedDifferences(x: number[], y: number[]): number[] {
+    const n = y.length;
+    const coef = [...y].map(val => Number(val));
+    
+    for (let j = 1; j < n; j++) {
+        for (let i = n - 1; i >= j; i--) {
+            coef[i] = (coef[i] - coef[i - 1]) / (x[i] - x[i - j]);
+        }
     }
-  }
+    return coef;
+}
 
-  // 5. Логарифмическая аппроксимация (только если все x > 0)
-  if (!hasNegativeX) {
-    try {
-      const [logFn, aLog, bLog] = logarithmicApproximation(xs, ys, n);
-      results.push({
-        name: "Логарифмическая",
-        fn: logFn,
-        coefficients: [aLog, bLog],
-        standardDeviation: computeMeanSquaredError(xs, ys, logFn, n),
-        measureOfDeviation: computeMeasureOfDeviation(xs, ys, logFn, n),
-        determinationCoefficient: computeCoefficientOfDetermination(xs, ys, logFn, n)
-      });
-    } catch (e) {
-      console.warn("Не удалось вычислить логарифмическую аппроксимацию:", e.message);
+function newtonDividedDifferencePolynomial(xs: number[], ys: number[], n: number): Polynomial {
+    const coef = dividedDifferences(xs, ys);
+    return (x: number) => {
+        return ys[0] + reduce<number>(
+            Array.from({length: n - 1}, (_, k) => k + 1),
+            (sum, k) => {
+                const term = reduce<number>(
+                    Array.from({length: k}, (_, j) => x - xs[j]),
+                    (a, b) => a * b,
+                    1
+                );
+                return sum + coef[k] * term;
+            },
+            0
+        );
+    };
+}
+
+function finiteDifferences(y: number[]): number[][] {
+    const n = y.length;
+    const deltaY: number[][] = Array.from({length: n}, () => new Array(n).fill(NaN));
+    
+    for (let i = 0; i < n; i++) {
+        deltaY[i][0] = y[i];
     }
-  }
-
-  // 6. Степенная аппроксимация (только если все x > 0 и все y > 0)
-  if (!hasNegativeX && !hasNegativeY) {
-    try {
-      const [powerFn, aPower, bPower] = powerApproximation(xs, ys, n);
-      results.push({
-        name: "Степенная",
-        fn: powerFn,
-        coefficients: [aPower, bPower],
-        standardDeviation: computeMeanSquaredError(xs, ys, powerFn, n),
-        measureOfDeviation: computeMeasureOfDeviation(xs, ys, powerFn, n),
-        determinationCoefficient: computeCoefficientOfDetermination(xs, ys, powerFn, n)
-      });
-    } catch (e) {
-      console.warn("Не удалось вычислить степенную аппроксимацию:", e.message);
+    
+    for (let j = 1; j < n; j++) {
+        for (let i = 0; i < n - j; i++) {
+            deltaY[i][j] = deltaY[i + 1][j - 1] - deltaY[i][j - 1];
+        }
     }
-  }
+    return deltaY;
+}
 
-  // Находим лучшую аппроксимацию (с наименьшей мерой отклонения)
-  const bestApproximation = results.reduce((best, current) =>
-    current.measureOfDeviation < best.measureOfDeviation ? current : best
-  );
+function newtonFiniteDifferencePolynomial(xs: number[], ys: number[], n: number): Polynomial {
+    const h = xs[1] - xs[0];
+    const deltaY = finiteDifferences(ys);
+    
+    return (x: number) => {
+        return ys[0] + reduce<number>(
+            Array.from({length: n - 1}, (_, k) => k + 1),
+            (sum, k) => {
+                const term = reduce<number>(
+                    Array.from({length: k}, (_, j) => (x - xs[0]) / h - j),
+                    (a, b) => a * b,
+                    1
+                );
+                return sum + term * deltaY[0][k] / factorial(k);
+            },
+            0
+        );
+    };
+}
 
-  // Вывод результатов в консоль
-  console.log("Результаты аппроксимации:");
-  console.log("------------------------------------------------------------");
-  results.forEach(result => {
-    console.log(`${result.name} функция:`);
-    console.log(`Коэффициенты: ${result.coefficients.map(c => c.toFixed(4)).join(", ")}`);
-    console.log(`Среднеквадратичное отклонение: ${result.standardDeviation.toFixed(4)}`);
-    console.log(`Мера отклонения: ${result.measureOfDeviation.toFixed(4)}`);
-    console.log(`Коэффициент детерминации: ${result.determinationCoefficient.toFixed(4)}`);
+function gaussPolynomial(xs: number[], ys: number[], n: number): Polynomial {
+    const alphaInd = Math.floor(n / 2);
+    const finDifs = finiteDifferences(ys);
 
-    if (result.pearsonCorrelation !== undefined) {
-      console.log(`Коэффициент корреляции Пирсона: ${result.pearsonCorrelation.toFixed(4)}`);
+    const h = xs[1] - xs[0];
+    const dts1 = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+
+    return (x: number) => (
+      ys[alphaInd] + Array.from({length: n - 1}, (_, k) => k + 1).reduce<number>(
+          (sum, k) => {
+              const term = reduce<number>(
+                  Array.from({length: k}, (_, j) => (x - xs[alphaInd]) / h + dts1[j]),
+                  (a, b) => a * b,
+                  1
+              );
+              let coeff;
+              const diffCount = finDifs[k].filter(val => !isNaN(val)).length
+              if (x > xs[alphaInd]) {
+                coeff = finDifs[Math.floor(diffCount / 2)][k];
+              } else {
+                const index = Math.floor(diffCount / 2) - (1 - diffCount % 2);
+                coeff = finDifs[index][k];
+              }
+              return sum + term * coeff / factorial(k);
+          },
+          0
+      )
+    )
+}
+
+function stirlingPolynomial(xs: number[], ys: number[], n: number): Polynomial {
+    const alphaInd = Math.floor(n / 2);
+    const finDifs: number[][] = [];
+    finDifs.push([...ys]);
+
+    for (let k = 1; k <= n; k++) {
+        const last = [...finDifs[k - 1]];
+        const newDif: number[] = [];
+        for (let i = 0; i < n - k + 1; i++) {
+            newDif.push(last[i + 1] - last[i]);
+        }
+        finDifs.push(newDif);
     }
 
-    // Интерпретация коэффициента детерминации
-    const r2 = result.determinationCoefficient;
-    let interpretation = "";
-    if (r2 >= 0.95) {
-      interpretation = "Отличное соответствие";
-    } else if (r2 >= 0.75) {
-      interpretation = "Хорошее соответствие";
-    } else if (r2 >= 0.5) {
-      interpretation = "Удовлетворительное соответствие";
-    } else {
-      interpretation = "Слабое соответствие";
+    const h = xs[1] - xs[0];
+    const dts1 = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+
+    const f1 = (x: number) => {
+        return ys[alphaInd] + reduce<number>(
+            Array.from({length: n}, (_, k) => k + 1),
+            (sum, k) => {
+                const term = reduce<number>(
+                    Array.from({length: k}, (_, j) => (x - xs[alphaInd]) / h + dts1[j]),
+                    (a, b) => a * b,
+                    1
+                );
+                return sum + term * finDifs[k][Math.floor(finDifs[k].length / 2)] / factorial(k);
+            },
+            0
+        );
+    };
+
+    const f2 = (x: number) => {
+        return ys[alphaInd] + reduce<number>(
+            Array.from({length: n}, (_, k) => k + 1),
+            (sum, k) => {
+                const term = reduce<number>(
+                    Array.from({length: k}, (_, j) => (x - xs[alphaInd]) / h - dts1[j]),
+                    (a, b) => a * b,
+                    1
+                );
+                const index = Math.floor(finDifs[k].length / 2) - (1 - finDifs[k].length % 2);
+                return sum + term * finDifs[k][index] / factorial(k);
+            },
+            0
+        );
+    };
+
+    return (x: number) => (f1(x) + f2(x)) / 2;
+}
+
+function besselPolynomial(xs: number[], ys: number[], n: number): Polynomial {
+    const alphaInd = Math.floor(n / 2);
+    const finDifs: number[][] = [];
+    finDifs.push([...ys]);
+
+    for (let k = 1; k <= n; k++) {
+        const last = [...finDifs[k - 1]];
+        const newDif: number[] = [];
+        for (let i = 0; i < n - k + 1; i++) {
+            newDif.push(last[i + 1] - last[i]);
+        }
+        finDifs.push(newDif);
     }
-    console.log(`Интерпретация: ${interpretation}`);
-    console.log("------------------------------------------------------------");
-  });
 
-  console.log("\nНаилучшая аппроксимирующая функция:");
-  console.log(`${bestApproximation.name} функция с мерой отклонения ${bestApproximation.measureOfDeviation.toFixed(4)}`);
+    const h = xs[1] - xs[0];
+    const dts1 = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
 
-  // Генерация данных для графиков
-  // const step = (interval[1] - interval[0]) / SEGMENTS;
-  // const graphData = results.map(result => {
-  //   const values: Point[] = [];
-  //   for (let x = interval[0]; x <= interval[1]; x += step) {
-  //     values.push([x, result.fn(x)]);
-  //   }
-  //   return {
-  //     name: result.name,
-  //     values,
-  //     isBest: result.name === bestApproximation.name
-  //   };
-  // });
+    return (x: number) => {
+        return (ys[alphaInd] + ys[alphaInd]) / 2 + reduce<number>(
+            Array.from({length: n}, (_, k) => k + 1),
+            (sum, k) => {
+                const term1 = reduce<number>(
+                    Array.from({length: k}, (_, j) => (x - xs[alphaInd]) / h + dts1[j]),
+                    (a, b) => a * b,
+                    1
+                ) * finDifs[k][Math.floor(finDifs[k].length / 2)] / factorial(2 * k);
 
-  return results;
+                const term2 = ((x - xs[alphaInd]) / h - 0.5) *
+                    reduce<number>(
+                        Array.from({length: k}, (_, j) => (x - xs[alphaInd]) / h + dts1[j]),
+                        (a, b) => a * b,
+                        1
+                    ) * finDifs[k][Math.floor(finDifs[k].length / 2)] / factorial(2 * k + 1);
+
+                return sum + term1 + term2;
+            },
+            0
+        );
+    };
+}
+
+type InterpolationResult = {
+  t: number
+  result: number
+  fn: Polynomial
+  name: InterpolationMethod
+}
+
+export type SolutionData = {
+  diffTable: number[][]
+  interpolationPoint: number
+  interpolations: InterpolationResult[]
+  points: Point[]
+}
+
+enum InterpolationMethod {
+  Lagrange = "Многочлен Лагранжа",
+  NewtonDividedDifference = "Многочлен Ньютона с разделенными разностями",
+  NewtonFiniteDifference = "Многочлен Ньютона с конечными разностями",
+  Gauss = "Многочлен Гаусса",
+  Stirling = "Многочлен Стирлинга",
+  Bessel = "Многочлен Бесселя"
+}
+
+type InterpolationFunction = (xs: number[], ys: number[], n: number) => Polynomial
+
+export function solve(points: Point[], x: number): SolutionData {
+    const n = points.length
+    const xs = points.map(([x]) => x)
+    const ys = points.map(([, y]) => y)
+    const deltaY = finiteDifferences(ys);
+
+    const methods: Array<[InterpolationMethod, InterpolationFunction]> = [
+        [InterpolationMethod.Lagrange, lagrangePolynomial],
+        [InterpolationMethod.NewtonDividedDifference, newtonDividedDifferencePolynomial],
+        [InterpolationMethod.NewtonFiniteDifference, newtonFiniteDifferencePolynomial],
+        [InterpolationMethod.Gauss, gaussPolynomial],
+        // [InterpolationMethod.Stirling, stirlingPolynomial],
+        // [InterpolationMethod.Bessel, besselPolynomial]
+    ];
+
+    let finiteDifference = true;
+    let last = xs[1] - xs[0];
+    for (let i = 1; i < n; i++) {
+        const newDiff = Math.abs(xs[i] - xs[i - 1]);
+        if (Math.abs(newDiff - last) > 0.0001) {
+            finiteDifference = false;
+        }
+        last = newDiff;
+    }
+
+    const h = xs[1] - xs[0];
+    const alphaInd = Math.floor(n / 2);
+
+    const interpolations = methods.reduce<InterpolationResult[]>((acc, [name, method]) => {
+      if (method === newtonFiniteDifferencePolynomial && !finiteDifference) return acc;
+      if (method === newtonDividedDifferencePolynomial && finiteDifference) return acc;
+      if ((method === gaussPolynomial || method === stirlingPolynomial) && xs.length % 2 === 0) return acc;
+      if (method === besselPolynomial && xs.length % 2 === 1) return acc;
+
+      const t = (x - xs[alphaInd]) / h;
+
+      const P = method(xs, ys, n);
+      acc.push({
+        result: P(x),
+        fn: P,
+        t,
+        name
+      })
+
+      return acc
+    }, [] as InterpolationResult[])
+
+    return {
+      diffTable: deltaY,
+      interpolations,
+      interpolationPoint: x,
+      points: xs.map((x, ind) => [x, ys[ind]])
+    }
 }
