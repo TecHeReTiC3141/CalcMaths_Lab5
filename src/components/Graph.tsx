@@ -1,15 +1,34 @@
-import { ComposedChart, Line, Scatter, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import {
+  ComposedChart,
+  Line,
+  Scatter,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
 import { SolutionData } from "../utils";
-import { memo } from 'react';
+import { memo } from "react";
 
 interface MultiGraphProps {
-  solution: SolutionData
+  solution: SolutionData;
   segments?: number;
 }
 
-const COLORS = ['#8884d8', '#82ca9d', '#ff7300', '#ffc658', '#a4de6c', '#d0ed57'];
+const COLORS = [
+  "#8884d8",
+  "#82ca9d",
+  "#ff7300",
+  "#ffc658",
+  "#a4de6c",
+  "#d0ed57",
+];
 
-export const MultiGraph = memo(function MultiGraph({ solution, segments = 300 }: MultiGraphProps) {
+export const MultiGraph = memo(function MultiGraph({
+  solution,
+  segments = 300,
+}: MultiGraphProps) {
   if (!solution.interpolations.length || !solution.points.length) return null;
 
   // Определяем интервал по введенным точкам
@@ -32,65 +51,81 @@ export const MultiGraph = memo(function MultiGraph({ solution, segments = 300 }:
         x,
         [`y_${index}`]: interpolation.fn(x),
         name: interpolation.name,
-        color
+        color,
       };
     });
 
     return {
       name: interpolation.name,
       data: functionData,
-      color
+      color,
     };
   });
 
   // Подготовка данных для отображения
-  const chartData = allData[0].data.map((point, i) => {
-    const result: any = { x: point.x };
-    allData.forEach((approx, idx) => {
-      result[`y_${idx}`] = approx.data[i][`y_${idx}`];
-      result[`name_${idx}`] = approx.name;
-    });
-    return result;
-  }).concat(solution.points.map(([x, y]) => {
-    const point: any = { x, y }
-    solution.interpolations.forEach((interpolation, idx) => {
-      point[`y_${idx}`] = interpolation.fn(x);
-      point[`name_${idx}`] = interpolation.name;
-    });
+  const chartData = allData[0].data
+    .map((point, i) => {
+      const result: any = { x: point.x };
+      allData.forEach((approx, idx) => {
+        result[`y_${idx}`] = approx.data[i][`y_${idx}`];
+        result[`name_${idx}`] = approx.name;
+      });
+      return result;
+    })
+    .concat(
+      ...solution.points.map(([x, y]) => {
+        const point: any = { x, y };
+        solution.interpolations.forEach((interpolation, idx) => {
+          point[`y_${idx}`] = interpolation.fn(x);
+          point[`name_${idx}`] = interpolation.name;
+        });
 
-    return point
-  })).sort((a, b) => a.x - b.x);
+        return point;
+      }),
+      ...solution.interpolations.map((interpolation, idx) => ({
+        x: solution.interpolationPoint,
+        [`solution_${idx}`]: interpolation.fn(solution.interpolationPoint)
+      }))
+    )
+    .sort((a, b) => a.x - b.x);
 
   return (
-    <ComposedChart
-      width={800}
-      height={500}
-      data={chartData}
-      margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-    >
-      <CartesianGrid strokeDasharray="3 3" />
-      <XAxis dataKey="x" />
-      <YAxis />
-      <Tooltip />
-      <Legend />
-
-      {/* Линии аппроксимирующих функций */}
+    <div className="grid grid-cols-2 gap-x-3 gap-y-3">
       {allData.map((approx, index) => (
-        <Line
-          key={`line-${index}`}
-          type="monotone"
-          dataKey={`y_${index}`}
-          name={approx.name}
-          stroke={approx.color}
-          dot={false}
-        />
+        <ComposedChart
+          width={600}
+          height={450}
+          data={chartData}
+          margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="x" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+
+          <Line
+            key={`line-${index}`}
+            type="monotone"
+            dataKey={`y_${index}`}
+            name={approx.name}
+            stroke={approx.color}
+            dot={false}
+          />
+          <Scatter
+            name="Исходные точки"
+            dataKey="y"
+            fill="#ff0000"
+            shape="circle"
+          />
+          <Scatter
+            name="Точка интерполяции"
+            dataKey={`solution_${index}`}
+            fill="#00aa00"
+            shape="circle"
+          />
+        </ComposedChart>
       ))}
-      <Scatter
-        name="Исходные точки"
-        dataKey="y"
-        fill="#ff0000"
-        shape="circle"
-      />
-    </ComposedChart>
+    </div>
   );
 });

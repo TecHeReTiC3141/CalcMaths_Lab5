@@ -5,7 +5,7 @@ import './index.css'
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
-        <div className="w-full h-full bg-gray-400">
+        <div className="w-full h-full bg-gray-300">
             <App/>
         </div>
     </StrictMode>

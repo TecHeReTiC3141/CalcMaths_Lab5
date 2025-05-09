@@ -22,5 +22,6 @@ export type SolvingMethodOption = {
 
 export enum ValidationError {
   noConvenge = 'noConvenge',
-  invalidPoints = 'invalidPoints'
+  invalidPoints = 'invalidPoints',
+  notAscendingPoints = 'notAscendingPoints'
 }
