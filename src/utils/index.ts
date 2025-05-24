@@ -1,372 +1,226 @@
-export type Point = [number, number];
-export type ApproximationResult = {
-  name: string;
-  fn: (x: number) => number;
-  coefficients: number[];
-  standardDeviation: number;
-  measureOfDeviation: number;
-  determinationCoefficient: number;
-  pearsonCorrelation?: number;
-};
+import { NumericalMethod } from "../types";
 
-export const getPoints = (value: string): Point[] | null => {
-  const lines = value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line);
-  const points = lines.map(
-    (line) => line.split(" ").map((val) => +val.replace(",", ".")) as Point
-  );
-  if (points.some(([x, y]) => isNaN(x) || isNaN(y))) {
-    return null;
-  }
-  return points;
-};
-
-type Polynomial = (x: number) => number;
-
-function factorial(n: number): number {
-  return n <= 1 ? 1 : n * factorial(n - 1);
-}
-
-function reduce<T>(arr: T[], fn: (a: T, b: T) => T, initial?: T): T {
-  return arr.reduce(fn, initial as T);
-}
-
-function lagrangePolynomial(xs: number[], ys: number[], n: number): Polynomial {
-  return (x: number) => {
-    return ys.slice(0, n).reduce((sum, y, i) => {
-      const term = reduce<number>(
-        xs
-          .slice(0, n)
-          .filter((_, j) => i !== j)
-          .map((xj) => (x - xj) / (xs[i] - xj)),
-        (a, b) => a * b,
-        1
-      );
-      return sum + y * term;
-    }, 0);
-  };
-}
-
-function dividedDifferences(x: number[], y: number[]): number[] {
-  const n = y.length;
-  const coef = [...y].map((val) => Number(val));
-
-  for (let j = 1; j < n; j++) {
-    for (let i = n - 1; i >= j; i--) {
-      coef[i] = (coef[i] - coef[i - 1]) / (x[i] - x[i - j]);
-    }
-  }
-  return coef;
-}
-
-function newtonDividedDifferencePolynomial(
+/**
+ * Обычный метод Эйлера (явный) для решения ОДУ dy/dx = f(x, y)
+ * @param f - функция f(x, y) (правая часть ОДУ)
+ * @param xs - массив значений x (узлов сетки)
+ * @param y0 - начальное значение y(x0)
+ * @returns массив значений y в точках xs
+ */
+function eulerMethod(
+  f: (x: number, y: number) => number,
   xs: number[],
-  ys: number[],
-  n: number
-): Polynomial {
-  const coef = dividedDifferences(xs, ys);
-  return (x: number) => {
-    return (
-      ys[0] +
-      reduce<number>(
-        Array.from({ length: n - 1 }, (_, k) => k + 1),
-        (sum, k) => {
-          const term = reduce<number>(
-            Array.from({ length: k }, (_, j) => x - xs[j]),
-            (a, b) => a * b,
-            1
-          );
-          return sum + coef[k] * term;
-        },
-        0
-      )
-    );
-  };
-}
+  y0: number,
+  eps: number
+): number[] {
+  const ys: number[] = [y0];
+  const h = xs[1] - xs[0];
 
-function finiteDifferences(y: number[]): number[][] {
-  const n = y.length;
-  const deltaY: number[][] = Array.from({ length: n }, () =>
-    new Array(n).fill(NaN)
-  );
-
-  for (let i = 0; i < n; i++) {
-    deltaY[i][0] = y[i];
+  for (let i = 0; i < xs.length; i++) {
+    const yNext = ys[i] + h * f(xs[i], ys[i]);
+    ys.push(yNext);
   }
 
-  for (let j = 1; j < n; j++) {
-    for (let i = 0; i < n - j; i++) {
-      deltaY[i][j] = deltaY[i + 1][j - 1] - deltaY[i][j - 1];
-    }
-  }
-  return deltaY;
+  return ys;
 }
 
-function newtonFiniteDifferencePolynomial(
+/**
+ * Улучшенный метод Эйлера (модифицированный, метод Хьюна)
+ * @param f - функция f(x, y) (правая часть ОДУ)
+ * @param xs - массив значений x (узлов сетки)
+ * @param y0 - начальное значение y(x0)
+ * @param eps - параметр точности (не используется, оставлен для совместимости)
+ * @returns массив значений y в точках xs
+ */
+function improvedEulerMethod(
+  f: (x: number, y: number) => number,
   xs: number[],
-  ys: number[],
-  n: number
-): Polynomial {
+  y0: number,
+  eps: number
+): number[] {
+  const ys: number[] = [y0];
   const h = xs[1] - xs[0];
-  const deltaY = finiteDifferences(ys);
 
-  return (x: number) => {
-    return (
-      ys[0] +
-      reduce<number>(
-        Array.from({ length: n - 1 }, (_, k) => k + 1),
-        (sum, k) => {
-          const term = reduce<number>(
-            Array.from({ length: k }, (_, j) => (x - xs[0]) / h - j),
-            (a, b) => a * b,
-            1
-          );
-          return sum + (term * deltaY[0][k]) / factorial(k);
-        },
-        0
-      )
-    );
-  };
+  for (let i = 0; i < xs.length; i++) {
+    const k1 = f(xs[i], ys[i]); // наклон в начальной точке
+    const k2 = f(xs[i] + h, ys[i] + h * k1); // наклон в прогнозируемой точке
+    const yNext = ys[i] + 0.5 * h * (k1 + k2); // усредненный шаг
+    ys.push(yNext);
+  }
+
+  return ys;
 }
 
-function gaussPolynomial(xs: number[], ys: number[], n: number): Polynomial {
-  const alphaInd = Math.floor(n / 2);
-  const finDifs = finiteDifferences(ys);
+/**
+ * Метод Адамса-Бэшфорта 4-го порядка для решения ОДУ dy/dx = f(x, y)
+ * @param f - функция f(x, y) (правая часть ОДУ)
+ * @param xs - массив значений x (узлов сетки)
+ * @param y0 - начальное значение y(x0)
+ * @param eps - параметр точности (не используется, оставлен для совместимости)
+ * @returns массив значений y в точках xs
+ */
+function adamsBashforthMethod(
+  f: (x: number, y: number) => number,
+  xs: number[],
+  y0: number,
+  eps: number
+): number[] {
+  if (xs.length < 4) {
+    throw new Error("Метод Адамса-Бэшфорта требует минимум 4 точки");
+  }
 
-  const h = xs[1] - xs[0];
-  const dts1 = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+  const h = xs[1] - xs[0]; // шаг (предполагаем равномерную сетку)
+  const ys: number[] = [y0];
 
-  return (x: number) =>
-    ys[alphaInd] +
-    Array.from({ length: n - 1 }, (_, k) => k + 1).reduce<number>((sum, k) => {
-      let coeff, term;
-      const diffCount = finDifs[k].filter((val) => !isNaN(val)).length;
-      if (x > xs[alphaInd]) {
-        term = reduce<number>(
-          Array.from({ length: k }, (_, j) => (x - xs[alphaInd]) / h + dts1[j]),
-          (a, b) => a * b,
-          1
-        );
-        coeff = finDifs[Math.floor(diffCount / 2)][k];
-      } else {
-        term = reduce<number>(
-          Array.from({ length: k }, (_, j) => (x - xs[alphaInd]) / h - dts1[j]),
-          (a, b) => a * b,
-          1
-        );
-        const index = Math.floor(diffCount / 2) - (1 - (diffCount % 2));
-        coeff = finDifs[index][k];
+  // Вычисляем первые 4 точки с помощью улучшенного метода Эйлера
+  const initialPoints = Math.min(4, xs.length);
+  for (let i = 1; i < initialPoints; i++) {
+    const k1 = h * f(xs[i - 1], ys[i - 1]);
+    const k2 = h * f(xs[i - 1] + h / 2, ys[i - 1] + k1 / 2);
+    const k3 = h * f(xs[i - 1] + h / 2, ys[i - 1] + k2 / 2);
+    const k4 = h * f(xs[i - 1] + h, ys[i - 1] + k3);
+    ys.push(ys[i - 1] + (k1 + 2 * k2 + 2 * k3 + k4) / 6);
+  }
+
+  // Основной цикл метода Адамса-Бэшфорта 4-го порядка
+  for (let i = 4; i < xs.length; i++) {
+    const f0 = f(xs[i - 1], ys[i - 1]);
+    const f1 = f(xs[i - 2], ys[i - 2]);
+    const f2 = f(xs[i - 3], ys[i - 3]);
+    const f3 = f(xs[i - 4], ys[i - 4]);
+
+    let yNext = ys[i - 1] + (h * (55 * f0 - 59 * f1 + 37 * f2 - 9 * f3)) / 24;
+
+    while (true) {
+      const yc =
+        ys[i - 1] + (h / 24) * (9 * f(xs[i], yNext) + 19 * f0 - 5 * f1 + f2);
+      if (Math.abs(yc - yNext) < eps) {
+        yNext = yc;
+        break;
       }
-      return sum + (term * coeff) / factorial(k);
-    }, 0);
-}
-
-function stirlingPolynomial(xs: number[], ys: number[], n: number): Polynomial {
-  const alphaInd = Math.floor(n / 2);
-  const finDifs: number[][] = [];
-  finDifs.push([...ys]);
-
-  for (let k = 1; k <= n; k++) {
-    const last = [...finDifs[k - 1]];
-    const newDif: number[] = [];
-    for (let i = 0; i < n - k + 1; i++) {
-      newDif.push(last[i + 1] - last[i]);
+      yNext = yc;
     }
-    finDifs.push(newDif);
+    ys.push(yNext);
   }
 
-  const h = xs[1] - xs[0];
-  const dts1 = [0, -1, 1, -2, 2, -3, 3, -4, 4];
-
-  const f1 = (x: number) => {
-    return (
-      ys[alphaInd] +
-      reduce<number>(
-        Array.from({ length: n }, (_, k) => k + 1),
-        (sum, k) => {
-          const term = reduce<number>(
-            Array.from(
-              { length: k },
-              (_, j) => (x - xs[alphaInd]) / h + dts1[j]
-            ),
-            (a, b) => a * b,
-            1
-          );
-          return (
-            sum +
-            (term * finDifs[k][Math.floor(finDifs[k].length / 2)]) /
-              factorial(k)
-          );
-        },
-        0
-      )
-    );
-  };
-
-  const f2 = (x: number) => {
-    return (
-      ys[alphaInd] +
-      reduce<number>(
-        Array.from({ length: n }, (_, k) => k + 1),
-        (sum, k) => {
-          const term = reduce<number>(
-            Array.from(
-              { length: k },
-              (_, j) => (x - xs[alphaInd]) / h - dts1[j]
-            ),
-            (a, b) => a * b,
-            1
-          );
-          const index =
-            Math.floor(finDifs[k].length / 2) - (1 - (finDifs[k].length % 2));
-          return sum + (term * finDifs[k][index]) / factorial(k);
-        },
-        0
-      )
-    );
-  };
-
-  return (x: number) => (f1(x) + f2(x)) / 2;
+  return ys;
 }
 
-function besselPolynomial(xs: number[], ys: number[], n: number): Polynomial {
-  const alphaInd = Math.floor(n / 2);
-  const finDifs: number[][] = [];
-  finDifs.push([...ys]);
-
-  for (let k = 1; k <= n; k++) {
-    const last = [...finDifs[k - 1]];
-    const newDif: number[] = [];
-    for (let i = 0; i < n - k + 1; i++) {
-      newDif.push(last[i + 1] - last[i]);
-    }
-    finDifs.push(newDif);
-  }
-
-  const h = xs[1] - xs[0];
-  const dts1 = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
-
-  return (x: number) => {
-    return (
-      (ys[alphaInd] + ys[alphaInd]) / 2 +
-      reduce<number>(
-        Array.from({ length: n }, (_, k) => k + 1),
-        (sum, k) => {
-          const term1 =
-            (reduce<number>(
-              Array.from(
-                { length: k },
-                (_, j) => (x - xs[alphaInd]) / h + dts1[j]
-              ),
-              (a, b) => a * b,
-              1
-            ) *
-              finDifs[k][Math.floor(finDifs[k].length / 2)]) /
-            factorial(2 * k);
-
-          const term2 =
-            (((x - xs[alphaInd]) / h - 0.5) *
-              reduce<number>(
-                Array.from(
-                  { length: k },
-                  (_, j) => (x - xs[alphaInd]) / h + dts1[j]
-                ),
-                (a, b) => a * b,
-                1
-              ) *
-              finDifs[k][Math.floor(finDifs[k].length / 2)]) /
-            factorial(2 * k + 1);
-
-          return sum + term1 + term2;
-        },
-        0
-      )
-    );
-  };
+interface MethodInfo {
+  name: string;
+  method: NumericalMethod;
+  order: number;
 }
 
-type InterpolationResult = {
-  t: number;
-  result: number;
-  fn: Polynomial;
-  name: InterpolationMethod;
+const MAX_ITERS = 20;
+const INF = Number.MAX_VALUE;
+
+type SolutionResult = {
+  xs: number[];
+  ys: number[];
+  exactY: number[];
+  inaccuracy: number;
+  divCount: number;
+  h: number;
+  iters: number;
+  name: string;
 };
 
 export type SolutionData = {
-  diffTable: number[][];
-  interpolationPoint: number;
-  interpolations: InterpolationResult[];
-  points: Point[];
+  results: SolutionResult[];
+  accuracy: number;
 };
 
-enum InterpolationMethod {
-  Lagrange = "Многочлен Лагранжа",
-  NewtonDividedDifference = "Многочлен Ньютона с разделенными разностями",
-  NewtonFiniteDifference = "Многочлен Ньютона с конечными разностями",
-  Gauss = "Многочлен Гаусса",
-  Stirling = "Многочлен Стирлинга",
-  Bessel = "Многочлен Бесселя",
-}
+const methods: MethodInfo[] = [
+  { name: "Метод Эйлера", method: eulerMethod, order: 1 },
+  { name: "Улучшенный метод Эйлера", method: improvedEulerMethod, order: 2 },
+  { name: "Метод Адамса-Бэшфорта", method: adamsBashforthMethod, order: 4 },
+];
 
-type InterpolationFunction = (
-  xs: number[],
-  ys: number[],
-  n: number
-) => Polynomial;
+export function solve(
+  f: (x: number, y: number) => number,
+  exactSolution: (x: number, x0: number, y0: number) => number,
+  x0: number,
+  xn: number,
+  initialN: number,
+  y0: number,
+  eps: number
+): SolutionData {
+  const results: SolutionResult[] = [];
 
-export function solve(points: Point[], x: number): SolutionData {
-  const n = points.length;
-  const xs = points.map(([x]) => x);
-  const ys = points.map(([, y]) => y);
-  const deltaY = finiteDifferences(ys);
+  for (const { name, method, order } of methods) {
+    console.log(`${name}:\n`);
+    let ni = initialN;
+    let inaccuracy = INF;
 
-  const methods: Array<[InterpolationMethod, InterpolationFunction]> = [
-    [InterpolationMethod.Lagrange, lagrangePolynomial],
-    [InterpolationMethod.NewtonDividedDifference, newtonDividedDifferencePolynomial],
-    [InterpolationMethod.NewtonFiniteDifference, newtonFiniteDifferencePolynomial],
-    [InterpolationMethod.Gauss, gaussPolynomial],
-    // [InterpolationMethod.Stirling, stirlingPolynomial],
-    // [InterpolationMethod.Bessel, besselPolynomial]
-  ];
+    let xs = Array.from({ length: ni }, (_, i) => x0 + (i * (xn - x0)) / ni);
+    let ys = method(f, xs, y0, eps);
 
-  const finiteDifference = xs.slice(2).every((_, i) => {
-    const newDiff = xs[i + 2] - xs[i + 1];
-    const prevDiff = xs[i + 1] - xs[i];
+    for (let iters = 0; iters < MAX_ITERS; ++iters) {
+      if (inaccuracy <= eps) {
+        results.push({
+          xs,
+          ys,
+          exactY: xs.map((x) => exactSolution(x, x0, y0)),
+          inaccuracy,
+          divCount: ni,
+          h: (xn - x0) / ni,
+          iters: iters + 1,
+          name,
+        });
+        console.log(
+          `Для точности eps=${eps} интервал был разбит на n=${ni} частей с шагом h=${(
+            (xn - x0) /
+            ni
+          ).toFixed(6)} за ${iters} итераций.\n`
+        );
 
-    return Math.abs(newDiff - prevDiff) <= 0.0001;
-  });
+        console.log("y:\t[", ys.map((y) => y.toFixed(5)).join(", "), "]");
+        console.log(
+          "y_точн:\t[",
+          xs.map((x) => exactSolution(x, x0, y0).toFixed(5)).join(", "),
+          "]"
+        );
 
-  const h = xs[1] - xs[0];
-  const alphaInd = Math.floor(n / 2);
+        if (method === adamsBashforthMethod) {
+          console.log(`Погрешность (max|y_iточн - y_i|): ${inaccuracy}`);
+        } else {
+          console.log(`Погрешность (по правилу Рунге): ${inaccuracy}`);
+        }
+        break;
+      }
 
-  const interpolations = methods.reduce<InterpolationResult[]>(
-    (acc, [name, method]) => {
-      if (method === newtonFiniteDifferencePolynomial && !finiteDifference) return acc;
-      if (method === newtonDividedDifferencePolynomial && finiteDifference) return acc;
-      if ((method === gaussPolynomial || method === stirlingPolynomial) && xs.length % 2 === 0) return acc;
-      if (method === besselPolynomial && xs.length % 2 === 1) return acc;
+      iters++;
+      ni *= 2;
+      const newXs = Array.from(
+        { length: ni },
+        (_, i) => x0 + (i * (xn - x0)) / ni
+      );
+      const newYs = method(f, newXs, y0, eps);
 
-      const t = (x - xs[alphaInd]) / h;
+      if (method === adamsBashforthMethod) {
+        inaccuracy = Math.max(
+          ...newXs.map((x, i) => Math.abs(exactSolution(x, x0, y0) - newYs[i]))
+        );
+      } else {
+        const coef = Math.pow(2, order) - 1;
+        inaccuracy =
+          Math.abs(newYs[newYs.length - 1] - ys[ys.length - 1]) / coef;
+      }
 
-      const P = method(xs, ys, n);
-      acc.push({
-        result: P(x),
-        fn: P,
-        t,
-        name,
-      });
+      xs = newXs;
+      ys = newYs;
+    }
 
-      return acc;
-    },
-    [] as InterpolationResult[]
-  );
+    if (inaccuracy > eps) {
+      console.log(
+        `! Не удалось увеличить точность. Произведено ${MAX_ITERS} итераций.`
+      );
+    }
+  }
 
   return {
-    diffTable: deltaY,
-    interpolations,
-    interpolationPoint: x,
-    points: xs.map((x, ind) => [x, ys[ind]]),
+    results,
+    accuracy: eps,
   };
 }
